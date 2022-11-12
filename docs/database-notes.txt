@@ -1,0 +1,67 @@
+DB File: Search Scenarios
+- entity type -> all entities of type
+- entity id -> all attributes of entity
+- attribute type -> all entity ids having that attribute type
+
+DB File: Structure
+- always 4 KiB page size -> 4096 possible different VoidDataSizes (free space states)
+- file split into VoidSector and DataSector
+    - VoidSector = first 8 pages (VoidPages)
+    - VoidPageAddress = VoidDataSize * 8 (8 = size of address)
+    - VoidAddress written at VoidPageAddress
+        - if VoidAddress == 0 --> no VoidDataAddress for VoidDataSize available
+        - if VoidAddress < 0  --> |VoidAddress| = VoidDataAddress
+        - else                --> VoidAddress = VoidBucketAddress
+    - VoidBuckets are stored in DataSector
+        - they consist of
+            - VoidBucketSize = 16 bit = 2 Byte = 1 Short
+                - VoidBucketBuffer = 8 VoidDataAddresses
+                - 8 * 8 = 64 --> 4096 / 64 = 64 = 2^6 possible different amounts of VoidBucketBuffers --> 6 bit for VoidBucketBufferSize
+                - VoidBucketFreeSize = 2 VoidBucketBuffers = 16 VoidDataAddresses = 2^4 --> 4 bit for VoidBucketFreeSize
+                - if VoidBucketFreeSize == 0 and VoidDataAddress needs to be inserted
+                    - increase VoidBufferSize by 1 (= 8 possible VoidDataAddresses)
+                    - set VoidBucketFreeSize to 7 (8 new places - 1 directly occupied)
+                - if VoidBucketFreeSize == 16 and VoidDataAddress needs to be removed
+                    - decrease VoidBufferSize by 1
+                    - set VoidBucketFreeSize to 9 (8 places less + 1 directly freed)
+            - VoidDataAddresses
+
+- page block sector bucket cluster fragment
+
+DB Object
+- can be one of Entity/Index/DataObject
+- consists of one or multiple pages
+
+DB Space Management
+- whole DB always contained in one MMF
+- always 4 KiB page size -> 4096 different free space states
+- free space maintained in first 8 pages
+    - 8 pages -> 4096 longs
+    - each long represents available free space with num free bytes == addr of long
+    - if addr of long == 0 -> no free space -> try next bigger value
+    - if addr of long is negative -> abs(addr of long) = free space start address
+    - else -> addr of long = address of bucket with free space start addresses
+    - if add free space addr:size=4096 -> check if (addr + 1) is also free space -> if yes, replace free space (addr + 1) by addr
+- free space bucket consists of
+    - 1 short -> 4 bit free space in bucket -> 12 bit size of bucket
+
+if bucket size variable == 8 bit --> 2^8 possibilities -->
+
+bucket section = 16 addresses --> 16 * 8 = 128 bytes
+if bucket num sections == 0 --> 16 addresses --> 16*8 = 128 bytes
+if bucket num sections == 31 --> 31 * 16 * 8 = 3.968
+
+Node
+- always on one page
+- consists of
+	- numEntries: UShort
+	- freeSpaces: ordered List of FreeSpaceEntry<space: UInt, address: Long>
+		- negative address = child Node address
+		- use binary interpolation search to find
+			- read firstFreeSpace
+				- if searchSpace <= firstFreeSpace --> use firstFreeSpace
+			- read lastFreeSpace
+				- if searchSpace == lastFreeSpace --> use lastFreeSpace
+				- if search > lastFreeSpace --> use endAddress (obtained from file chunk manager)
+			- do binary search
+				- first search address = 2 Byte (size of numEntries) + (((searchSpace - firstFreeSpace) / (lastFreeSpace - firstFreeSpace)) * 12 Bytes (size of FreeSpaceEntry))
